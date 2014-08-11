@@ -2,8 +2,8 @@ from __future__ import division
 import numpy as np
 import cv2
 
-import utils
 import server
+import utils
 
 np.set_printoptions(suppress=True)
 
@@ -26,10 +26,37 @@ def update(alpha, beta, gamma):
 
 	pose = utils.translate(y = 5).dot(rz).dot(rx)
 
-cv2.namedWindow(window_name)
+def intersection_with_xz_plane(origin, vector):
+	# matrix to drop y component
+	to_2d = np.array([
+		[1, 0, 0, 0],
+		[0, 0, 1, 0],
+		[0, 0, 0, 1]
+	])
+
+	# find intersections with xz plane
+	#          0 = (origin + vector * a).y 
+	#     =>   a = -origin.y / vector.y
+	#     => int = origin + vector * a
+	return to_2d.dot(
+		origin + utils.scale(all=-origin[1] / vector[1])
+					 .dot(vector)
+	)
+
+frame_size = np.array([1000, 500, 0])
+
+def reframe(corners):
+	"""
+	corners: list of homogenous 2-vector
+	reframe(corners) -> new_corners, size
+	"""
+	corners = corners + frame_size / 2
+
+	return corners, frame_size
 
 
-with utils.get_camera() as cam:
+with utils.get_camera() as cam, utils.named_window(window_name):
+	server.go()
 	while True:
 		ret, im = cam.read()
 
@@ -55,45 +82,22 @@ with utils.get_camera() as cam:
 		])
 
 		# corner vectors pointing out of camera, in pixel units
-		view_corners =  np.array([to_directions.dot(i) for i in image_corners])
+		view_corners = np.array([to_directions.dot(i) for i in image_corners])
 
 
 		# rotate camera corners and origin into world space
 		world_corners = np.array([pose.dot(v) for v in view_corners])
 		world_pos = pose.dot([0, 0, 0, 1])
 
-		# matrix to drop y component
-		to_2d = np.array([
-			[1, 0, 0, 0],
-			[0, 0, 1, 0],
-			[0, 0, 0, 1]
-		])
-
-		# find intersections with xy plane
-		#          0 = (world_pos + world_corner[i] * a).y 
-		#     =>   a = -world_pos.y / world_corner[i].y
-		#     => int = world_pos + world_corner * a
 		plane_corners = np.array([
-			to_2d.dot(
-				world_pos + utils.scale(all=-world_pos[1] / world_corner[1])
-							 .dot(world_corner)
-			)
+			intersection_with_xz_plane(world_pos, world_corner)
 			for world_corner in world_corners
 		])
 
 		# convert to pixels
-		plane_corners *= 50
+		plane_corners = plane_corners * [50, 50, 1]
 
-		size = np.array([1000, 500, 0])
-
-		# push into positive coords, add margin
-		margin = np.array([0, 0, 0])
-		# plane_corners = plane_corners - plane_corners.min(axis=0) + margin
-		# image_max = plane_corners.max(axis=0) + margin
-
-		plane_corners += size / 2
-
-
+		plane_corners, size = reframe(plane_corners)
 
 		perspective_cv = cv2.getPerspectiveTransform(
 			src=np.array([image_corner[:2] for image_corner in image_corners], np.float32),
@@ -105,5 +109,3 @@ with utils.get_camera() as cam:
 		cv2.imshow(window_name, dst)
 		if cv2.waitKey(50) != -1:
 			break
-
-cv2.destroyAllWindows()

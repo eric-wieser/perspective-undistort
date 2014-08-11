@@ -66,6 +66,14 @@ def get_camera():
     finally:
         capture.release()
 
+@contextmanager
+def named_window(name):
+    cv2.namedWindow(name)
+    try:
+        yield
+    finally:
+        cv2.destroyWindow(name)
+
 def get_acc():
     import ctypes
     'Sensorsapi.dll'

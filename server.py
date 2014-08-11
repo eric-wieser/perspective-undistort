@@ -15,6 +15,5 @@ def data_handler(f):
 	global on_data
 	on_data = f
 
-Thread(target=lambda: bottle.run(quiet=True)).start()
-import webbrowser
-# webbrowser.open('http://localhost:8080')
+def go():
+	Thread(target=lambda: bottle.run(quiet=True)).start()
