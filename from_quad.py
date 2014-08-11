@@ -8,7 +8,7 @@ import utils
 np.set_printoptions(suppress=True)
 
 # camera pose, in meter units
-pose = utils.translate(y = 5)
+pose = None
 
 window_name = 'res'
 
@@ -50,20 +50,105 @@ def reframe(corners):
 	corners: list of homogenous 2-vector
 	reframe(corners) -> new_corners, size
 	"""
+
+
+
 	corners = corners + frame_size / 2
 
 	return corners, frame_size
 
+def m_from_axis_and_center(x, center):
+	return np.array([
+		[x[0], -x[1], center[0]],
+		[x[1],  x[0], center[1]],
+		[0,        0, 1]
+	])
 
-with utils.get_camera() as cam, utils.named_window(window_name):
+def rotations_of(axis):
+	t = np.array([
+		[0, -1, 0],
+		[1, 0, 0],
+		[0, 0, 1]
+	])
+	for i in range(4):
+		yield axis
+		axis = t.dot(axis)
+
+def reframe(corners):
+	"""
+	corners: list of homogenous 2-vector
+	reframe(corners) -> new_corners, size
+	"""
+	# find diagonal lenghts and units
+	diag02 = corners[2] - corners[0]
+	diag13 = corners[3] - corners[1]
+	diag02_l = np.linalg.norm(diag02)
+	diag13_l = np.linalg.norm(diag13)
+	diag02 /= diag02_l
+	diag13 /= diag13_l
+
+
+	# find center and distances to center
+	dists = np.zeros(4)
+
+	m = np.array([diag02[:2], diag13[:2]]).T
+
+
+	side = (corners[1] - corners[0])[:2]
+
+	dists[0], md1 = np.linalg.solve(m, side)
+	dists[1] = -md1
+	dists[2] = diag02_l - dists[0]
+	dists[3] = diag13_l - dists[1]
+
+	center = corners[0] + dists[0] * diag02
+
+
+	x_axis = diag02 - diag13
+	x_axis /= np.linalg.norm(x_axis)
+
+	x_axis = max(rotations_of(x_axis), key=np.array([1, 0, 0]).dot)
+
+	from_cropped = m_from_axis_and_center(x_axis, center)
+	to_cropped = np.linalg.inv(from_cropped)
+
+	print m
+
+	centered_corners = np.array([to_cropped.dot(corner) for corner in corners])
+
+	diag02_cropped = to_cropped.dot(diag02)
+	diag13_cropped = to_cropped.dot(diag13)
+
+	cropped_corners = min(dists) * np.array([
+		-diag02_cropped,
+		-diag13_cropped,
+		diag02_cropped,
+		diag13_cropped
+	])
+
+	return (
+		centered_corners - cropped_corners.min(axis=0),
+		cropped_corners.max(axis=0) - cropped_corners.min(axis=0)
+	)
+
+
+with utils.get_camera() as cam, \
+	utils.named_window(window_name), \
+	utils.named_window("raw"):
+
 	server.go()
+	while pose is None:
+		import time
+		time.sleep(0)
 	while True:
 		ret, im = cam.read()
 
 		w = im.shape[1]
 		h = im.shape[0]
 		#  a field of view about 194.5 inches wide at 195 inches
-		f = h / 194.5 * 195
+		# f = h / 194.5 * 195
+		f = h / (460*2) * 730
+
 
 		# image corners in pixel dimentions
 		image_corners = [
@@ -97,15 +182,24 @@ with utils.get_camera() as cam, utils.named_window(window_name):
 		# convert to pixels
 		plane_corners = plane_corners * [50, 50, 1]
 
-		plane_corners, size = reframe(plane_corners)
+		try:
+			plane_corners, size = reframe(plane_corners)
+			assert (size[:2] < np.array([1000, 1000])).all()
+			perspective_cv = cv2.getPerspectiveTransform(
+				src=np.array([image_corner[:2] for image_corner in image_corners], np.float32),
+				dst=np.array([plane_corner[:2] for plane_corner in plane_corners], np.float32)
+			)
 
-		perspective_cv = cv2.getPerspectiveTransform(
-			src=np.array([image_corner[:2] for image_corner in image_corners], np.float32),
-			dst=np.array([plane_corner[:2] for plane_corner in plane_corners], np.float32)
-		)
+			dst = cv2.warpPerspective(im, perspective_cv, dsize=tuple(np.int32(size[:2])))
 
-		dst = cv2.warpPerspective(im, perspective_cv, dsize=tuple(np.int32(size[:2])))
+			cv2.imshow(window_name, dst)
+			cv2.imshow('raw', im)
 
-		cv2.imshow(window_name, dst)
+		except np.linalg.LinAlgError as e:
+			print e
+		except AssertionError as e:
+			print e
+
+
 		if cv2.waitKey(50) != -1:
 			break
