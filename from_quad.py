@@ -79,8 +79,6 @@ def reframe(corners):
 	from_cropped = m_from_axis_and_center(x_axis, center)
 	to_cropped = np.linalg.inv(from_cropped)
 
-	print m
-
 	centered_corners = np.array([to_cropped.dot(corner) for corner in corners])
 
 	diag02_cropped = to_cropped.dot(diag02)
