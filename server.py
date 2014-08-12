@@ -14,6 +14,7 @@ def handler():
 def data_handler(f):
 	global on_data
 	on_data = f
+	return f
 
 def go():
 	t = Thread(target=lambda: bottle.run(quiet=True))
