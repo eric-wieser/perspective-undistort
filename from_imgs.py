@@ -9,23 +9,28 @@ from PIL import Image, ExifTags
 
 import from_quad
 
-_, directory = sys.argv
-directory = unicode(directory)
-new_dir = directory + u'.out'
-frame_dir = directory + u'.frame'
+def mkdir_f(d):
+	if os.path.exists(d):
+		shutil.rmtree(d)
+	os.mkdir(d)
+	return d
 
-if os.path.exists(new_dir):
-	shutil.rmtree(new_dir)
-os.mkdir(new_dir)
 
-if os.path.exists(frame_dir):
-	shutil.rmtree(frame_dir)
-os.mkdir(frame_dir)
+_, orig_dir = sys.argv
+orig_dir = unicode(orig_dir)
 
-for fname in os.listdir(directory):
-	new_fname = os.path.join(new_dir, fname)
+# remove trailing slash
+if orig_dir.endswith(u'/'):
+	orig_dir = orig_dir[:-1]
+
+
+new_dir = mkdir_f(orig_dir + u'.out')
+frame_dir = mkdir_f(orig_dir + u'.frame')
+
+for fname in os.listdir(orig_dir):
+	new_fname   = os.path.join(new_dir, fname)
 	frame_fname = os.path.join(frame_dir, fname)
-	fname = os.path.join(directory, fname)
+	fname       = os.path.join(orig_dir, fname)
 
 	img = Image.open(fname)
 	exif_data = img._getexif()
@@ -43,6 +48,8 @@ for fname in os.listdir(directory):
 
 	encoding, geo_data = geo_data[:8], geo_data[8:]
 	geo_data = json.loads(geo_data)
+
+	print geo_data
 
 	# angle in centi degrees
 	yaw = geo_data['Yaw']
